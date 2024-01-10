@@ -1,0 +1,1 @@
+Script and raw data for analyses in: Taylor, K. L., Henry, C. S., & Farkas, T. E. (2023). Why fake death? Environmental and genetic control of tonic immobility in larval lacewings (Neuroptera: Chrysopidae). Journal of Insect Science, 23(4), 15.
