@@ -1,0 +1,305 @@
+---
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+# Why fake death? Environmental and genetic control of tonic immobility in larval lacewings 
+
+```{r, include=FALSE}
+require(knitr)
+require(plyr)
+require(dplyr)
+require(tidyr)
+library(rcompanion)
+require(ggplot2)
+require(car)
+require(FSA)
+require(scales)
+require(MCMCglmm)
+require(knitr)
+library(emmeans)
+theme_set(theme_classic(base_size=18))
+```
+
+
+```{r}
+dat <- read.csv(file="~/Documents/Death_Feign_Paper/Tonic_Immobility_5.18.23/DeathFeignAllData.csv", header=TRUE)
+```
+
+## Analysis of head and body measurements
+
+Subset data to exclude offspring from crosses
+
+```{r}
+pardat <- subset(dat, dat$generation != "O")
+pardat$diet <- as.factor(pardat$diet)
+```
+
+## Plots of head and body measures
+
+The effect of treatment on body size. Multiple peaks in head capsule size indicate multiple instars.
+
+```{r, warning=FALSE}
+ggplot(pardat, aes(x = head_length * 25.4, group = factor(diet), colour = factor( diet))) + 
+  geom_density() +  
+  guides(alpha = FALSE) +
+  scale_colour_manual(name = "",
+                      labels = c("Fed","1 Day Starved","2 Days Starved"), 
+                      values=c("black", "dimgrey", "lightgrey")) + 
+  labs(x = "Head length (mm)", y = "Density") + 
+  theme(legend.position = "bottom")
+
+ggplot(pardat, aes(x = head_width * 25.4, group=factor(diet), colour=factor(diet))) + 
+  geom_density() +  
+  guides(alpha = FALSE) + 
+  scale_colour_manual (name = "",
+                       labels = c("Fed","1 Day Starved","2 Days Starved"), 
+                       values = c("black", "dimgrey", "lightgrey")) + 
+  labs(x = "Head width (mm)", y = "Density") + 
+  theme(legend.position = "bottom")
+
+ggplot(pardat, aes(x=body_length * 25.4, group=factor(diet), colour=factor(diet))) + 
+  geom_density() +  
+  guides(alpha = FALSE) + 
+  scale_colour_manual (name = "",labels = c("Fed","1 Day Starved","2 Days Starved"), 
+                       values = c("black", "dimgrey", "lightgrey")) + 
+  labs(x = "Body length (mm)", y = "Density") + 
+  theme(legend.position = "bottom")
+
+ggplot(pardat, aes(x=body_width* 25.4, group=factor(diet), colour=factor(diet))) + 
+  geom_density() +  
+  guides(alpha = FALSE) + 
+  scale_colour_manual (name = "",
+                       labels = c("Fed","1 Day Starved","2 Days Starved"), 
+                       values = c("black", "dimgrey", "lightgrey")) + 
+  labs(x = "Body width (mm)", y = "Density") + 
+  theme(legend.position = "bottom")
+```
+## MANOVA
+
+Testing for effect of treatment (# of days starved) on body measurements
+
+```{r}
+dependent.vars<-(as.matrix(pardat[,9:10]))
+summary(manova(dependent.vars ~ pardat$diet))
+```
+```{r}
+pardat %>%
+  filter(body_length != "" & body_width != "") %>%
+  group_by(diet) %>%
+  mutate(body_length_mm = body_length*25.4, body_width_mm = body_width*25.4) %>%
+  summarize(meanbl = mean(body_length_mm), nbl = n(),  sdbl = sd(body_length_mm), sebl = sdbl / sqrt(nbl), meanbw = mean(body_width_mm), nbw = n(),  sdbw = sd(body_width_mm), sebw = sdbw / sqrt(nbw))
+           
+```
+
+## Prepare data for TI analysis
+
+```{r}
+pardat$feign10 <- ifelse(pardat$feign == "Y", 1, 0)
+pardat$time10 <- ifelse(pardat$time == "120", 1, 0)
+pardat$instar <- ifelse(pardat$head_width >= 0.031 & pardat$head_length >= 0.018, 3, 2)
+pardat_w_measures <- subset(pardat, pardat$instar == 3 | pardat$instar == 2)
+pardat_w_measures$instar <- as.factor(pardat_w_measures$instar)
+```
+
+## Analysis of Y/N engaged in TI trait
+
+```{r}
+fit0 <- glm(feign10 ~ 1, data = pardat_w_measures, family = binomial)
+fit1 <- glm(feign10 ~ diet, data = pardat_w_measures, family = binomial)
+fit2 <- glm(feign10 ~ diet + instar, data = pardat_w_measures, family = binomial)
+fit3 <- glm(feign10 ~ diet + diet:instar, data = pardat_w_measures, family = binomial)
+```
+
+```{r}
+anova(fit0,fit1, test='Chisq')
+anova(fit1,fit2, test='Chisq')
+anova(fit1,fit3, test='Chisq')
+```
+
+```{r}
+emm <- emmeans(fit1, "diet")
+contrast(emm, adjust="bonferroni", method ="pairwise")
+```
+
+
+```{r}
+pardat_w_measures %>%
+ggplot(aes(x = diet, y = feign10)) + 
+    stat_summary(aes(group = instar, color = instar), fun.y = "mean", geom = "line", 
+                 position = position_dodge(.2), size = 1) +
+  labs(y = "Percent TI",x = "Feeding group", color = "Instar") +
+  scale_color_manual(name = "Instar", labels=c("2nd","3rd"), 
+                    values = c("lightgrey", "dimgrey")) + 
+  scale_x_discrete(breaks=c("1", "2", "3"),
+                   labels=c("Fed", "1 Day Starved", "2 Days Starved"))
+
+```
+
+
+## Analysis of number of prods to initiate TI
+
+```{r}
+fit0 <- glm(prod ~ 1, data = pardat_w_measures, family = quasipoisson)
+fit1 <- glm(prod ~ diet, data = pardat_w_measures, family = quasipoisson)
+fit2 <- glm(prod ~ diet + instar, data = pardat_w_measures, family = quasipoisson)
+fit3 <- glm(prod ~ diet + diet:instar, data = pardat_w_measures, family = quasipoisson)
+```
+
+```{r}
+anova(fit0,fit1, test='Chisq')
+anova(fit1,fit2, test='Chisq')
+anova(fit1,fit3, test='Chisq')
+```
+
+
+```{r}
+emm <- emmeans(fit1, "diet")
+contrast(emm, adjust="bonferroni", method ="pairwise")
+```
+```{r}
+pardat_w_measures %>%
+  filter(feign10 == 1 ) %>%
+ggplot(aes(x = diet, y = prod)) + 
+  geom_boxplot(fill = "lightgrey") +
+  labs(y = "Stimuli before TI",x = "Feeding group") +
+  scale_x_discrete(breaks=c("1", "2", "3"),
+                   labels=c("Fed", "1 Day Starved", "2 Days Starved"))
+
+```
+
+## Analysis of TI length 
+
+
+```{r}
+fit0 <- glm(time10 ~ 1, data = pardat_w_measures, family = binomial)
+fit1 <- glm(time10 ~ diet, data = pardat_w_measures, family = binomial)
+fit2 <- glm(time10 ~ instar, data = pardat_w_measures, family = binomial)
+fit3 <- glm(time10 ~ diet:instar, data = pardat_w_measures, family = binomial)
+
+anova(fit0,fit1, test='Chisq')
+anova(fit0,fit2, test='Chisq')
+anova(fit0,fit3, test='Chisq')
+```
+
+```{r}
+pardat_w_measures %>%
+  filter(feign10 == 1 ) %>%
+ggplot(aes(x = diet, y = time10)) + 
+    stat_summary(aes(group = diet), fun.y = "mean", geom = "bar", 
+                 position = position_dodge(.2), size = 1) +
+  labs(y = "Percent Long TI",x = "Feeding group", color = "Instar") +
+  scale_color_manual(name = "Instar", labels=c("2nd","3rd"), 
+                    values = c("lightgrey", "dimgrey")) + 
+  scale_x_discrete(breaks=c("1", "2", "3"),
+                   labels=c("Fed", "1 Day Starved", "2 Days Starved"))
+
+```
+
+## Calculate stats on molting
+
+
+```{r}
+n2 <- nrow(subset(pardat_w_measures, pardat_w_measures$instar == 2))
+n3 <- nrow(subset(pardat_w_measures, pardat_w_measures$instar == 3))
+
+paste("The number of second instar larvae was",n2)
+paste("The number of third instar larvae was",n3)
+```
+
+
+```{r}
+fed_3rds <- length(which(pardat_w_measures$instar == 3 & pardat_w_measures$diet == "1"))/length(which(pardat_w_measures$diet == "1"))
+
+paste("Proportion of fed larvae molting is",fed_3rds)
+
+starved1_3rds <- length(which(pardat_w_measures$instar == 3 & pardat_w_measures$diet == "2"))/length(which(pardat_w_measures$diet == "2"))
+paste("Proportion of 1 day starved larvae molting is", starved1_3rds)
+
+starved2_3rds <- length(which(pardat_w_measures$instar == 3 & pardat_w_measures$diet == "3"))/length(which(pardat_w_measures$diet == "3"))
+paste("Proportion of 2 days starved larvae molting is", starved2_3rds)
+```
+
+
+
+## Heritability results
+
+## Prepare data
+
+```{r}
+ped <-subset(dat, dat$generation =="P" | dat$generation =="O")
+ped_columns <-c("ID","family_mother", "family_father")
+ped <- ped[ped_columns]
+for(x in 1:3) ped[,x]<-as.factor(ped[,x])
+
+
+herit_dat<-subset(dat, dat$generation == "P" | dat$generation == "O")
+herit_columns<-c("ID","feign")
+herit_dat <- herit_dat[herit_columns]
+names(herit_dat)[1]<-"animal"
+
+```
+
+## Animal model in MCMCglmm
+
+```{r}
+prior <- list(R = list(V = 1, fix = 1), 
+              G = list(G1 = list(V = 1, nu = 1000, alpha.mu = 0, alpha.V = 1)))
+
+
+model <- MCMCglmm(feign ~ 1, random = ~animal, 
+                  family = "categorical", 
+                  prior = prior, pedigree = ped, data = herit_dat, 
+                  nitt = 1000000, burnin = 50000, thin = 200, verbose=FALSE)
+```
+
+```{r}
+herit <- model$VCV[, "animal"]/(model$VCV[, "animal"] +
+      model$VCV[, "units"] + 1)
+
+paste("The heritability estimate is", mean(herit))
+HPDinterval(herit)
+```
+
+## Visualize heritability results
+
+```{r}
+herit_plot <- dat %>% group_by(family_ID, generation) %>% filter(generation!="N") %>% summarize(N = n(), feign_count = sum(feign == "Y"))
+herit_plot$mean<-(herit_plot$feign_count/herit_plot$N)
+
+
+offs<-subset(herit_plot,generation == "O")
+off_cols <-c("family_ID","mean","N")
+offs <- offs[off_cols]
+
+herit_plot<-subset(herit_plot,generation == "P")
+
+herit_plot<- merge(herit_plot,offs ,by = "family_ID")
+herit_cols <-c("mean.x","mean.y","N.y")
+herit_plot<-herit_plot[herit_cols]
+
+
+jpeg("~/Desktop/Fig4.jpg", width = 20, height = 15, units = "cm", res = 300)
+
+ggplot(herit_plot, aes(y = mean.y, x = as.factor(mean.x))) +
+  geom_point(aes(size = N.y), alpha = 0.4) +
+  labs(y = "Offspring mean", x = "Parent mean") + 
+  theme(legend.position="none")
+dev.off()
+```
+
+# Calculate sample sizes for figure legends
+
+```{r}
+pardat_w_measures %>%
+  group_by(instar, diet) %>%
+  summarize(n=n ())
+```
+
+```{r}
+pardat_w_measures %>%
+  filter(feign10 == 1) %>%
+  group_by(diet) %>%
+  summarize(n=n ())
+```
